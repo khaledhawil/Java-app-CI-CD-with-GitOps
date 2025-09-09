@@ -162,6 +162,7 @@ def safeSlackSend(String color, String message) {
         color: color,
         message: message,
         tokenCredentialId: env.SLACK_CREDENTIAL_ID,
+        teamDomain: 'work',
         iconEmoji: ':jenkins:'
       )
       echo "✅ Slack notification sent successfully"
