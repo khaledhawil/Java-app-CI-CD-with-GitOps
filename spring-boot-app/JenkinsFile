@@ -18,10 +18,9 @@ pipeline {
                      "*Job:* ${JOB_NAME}\n" +
                      "*Build:* #${BUILD_NUMBER}\n" +
                      "*Branch:* master\n" +
-                     "*Started by:* ${BUILD_USER_ID ?: 'Jenkins'}\n" +
+                     "*Started by:* ${env.BUILD_USER ?: 'Jenkins'}\n" +
                      "*Build URL:* ${BUILD_URL}",
-            teamDomain: '',
-            token: ''
+            tokenCredentialId: env.SLACK_CREDENTIAL_ID
           )
         }
       }
@@ -51,8 +50,7 @@ pipeline {
                        "*Status:* SUCCESS :tada:\n" +
                        "*Artifact:* spring-boot-web.jar created\n" +
                        "*Build URL:* ${BUILD_URL}",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -67,8 +65,7 @@ pipeline {
                        "*Stage:* Build and Test\n" +
                        "*Status:* FAILED :x:\n" +
                        "*Build URL:* ${BUILD_URL}console",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -96,8 +93,7 @@ pipeline {
                        "*Status:* SUCCESS :tada:\n" +
                        "*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n" +
                        "*Build URL:* ${BUILD_URL}",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -112,8 +108,7 @@ pipeline {
                        "*Stage:* Static Code Analysis\n" +
                        "*Status:* FAILED :x:\n" +
                        "*Build URL:* ${BUILD_URL}console",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -146,8 +141,7 @@ pipeline {
                        "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
                        "*Registry:* Docker Hub\n" +
                        "*Build URL:* ${BUILD_URL}",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -162,8 +156,7 @@ pipeline {
                        "*Stage:* Build and Push Docker Image\n" +
                        "*Status:* FAILED :x:\n" +
                        "*Build URL:* ${BUILD_URL}console",
-              teamDomain: '',
-              token: ''
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
             )
           }
         }
@@ -205,8 +198,7 @@ pipeline {
                    "*Deployment:* Updated to version ${BUILD_NUMBER}\n" +
                    "*Build URL:* ${BUILD_URL}\n" +
                    "*Console:* ${BUILD_URL}console",
-          teamDomain: '',
-          token: ''
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
         )
       }
     }
@@ -225,8 +217,7 @@ pipeline {
                    "*Build URL:* ${BUILD_URL}\n" +
                    "*Console:* ${BUILD_URL}console\n" +
                    "*Please check the logs for more details* :point_up:",
-          teamDomain: '',
-          token: ''
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
         )
       }
     }
@@ -243,8 +234,7 @@ pipeline {
                    "*Duration:* ${duration}\n" +
                    "*Build URL:* ${BUILD_URL}\n" +
                    "*Console:* ${BUILD_URL}console",
-          teamDomain: '',
-          token: ''
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
         )
       }
     }
@@ -261,8 +251,7 @@ pipeline {
                    "*Duration:* ${duration}\n" +
                    "*Build URL:* ${BUILD_URL}\n" +
                    "*Console:* ${BUILD_URL}console",
-          teamDomain: '',
-          token: ''
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
         )
       }
     }
