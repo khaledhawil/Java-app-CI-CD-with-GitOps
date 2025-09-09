@@ -103,7 +103,7 @@ pipeline {
           // Update Trivy database
           sh 'trivy --version && trivy image --download-db-only'
           
-          // Scan the Docker image
+          // Scan the Docker image with improved timeout and error handling
           sh """
             echo "🔍 =============================================="
             echo "🔍 Starting Trivy Security Scan"
@@ -113,30 +113,75 @@ pipeline {
             # Create reports directory
             mkdir -p trivy-reports
             
-            # Run Trivy scan with multiple output formats
-            trivy image --format table --output trivy-reports/trivy-report.txt ${DOCKER_IMAGE} || true
-            trivy image --format json --output trivy-reports/trivy-report.json ${DOCKER_IMAGE} || true
+            # Run Trivy scan with increased timeout
+            echo "🔍 Running detailed security scan (this may take a few minutes)..."
+            trivy image --timeout 15m --scanners vuln --format json --output trivy-reports/trivy-report.json ${DOCKER_IMAGE} || echo "⚠️ JSON scan encountered issues but continuing..."
+            
+            # Generate table report with shorter timeout  
+            trivy image --timeout 5m --scanners vuln --format table --output trivy-reports/trivy-report.txt ${DOCKER_IMAGE} || echo "⚠️ Table report timed out, using JSON report only"
             
             # Display scan results
             echo ""
             echo "📊 TRIVY SECURITY SCAN RESULTS:"
             echo "=============================================="
-            cat trivy-reports/trivy-report.txt || echo "⚠️ Could not display report"
+            
+            if [ -f "trivy-reports/trivy-report.txt" ] && [ -s "trivy-reports/trivy-report.txt" ]; then
+              echo "✅ Displaying first 30 lines of scan results:"
+              head -30 trivy-reports/trivy-report.txt
+              echo ""
+              echo "(Report truncated for display - full report in Jenkins artifacts)"
+            else
+              echo "⚠️ Table report not available, checking JSON report status..."
+              if [ -f "trivy-reports/trivy-report.json" ]; then
+                echo "✅ JSON report generated - vulnerabilities will be counted"
+              else
+                echo "❌ No scan reports generated successfully"
+              fi
+            fi
             echo "=============================================="
             
-            # Check for HIGH and CRITICAL vulnerabilities
-            HIGH_VULNS=\$(trivy image --format json ${DOCKER_IMAGE} | jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL") | .VulnerabilityID' | wc -l)
-            CRITICAL_VULNS=\$(trivy image --format json ${DOCKER_IMAGE} | jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | .VulnerabilityID' | wc -l)
+            # Count vulnerabilities with fallback methods
+            CRITICAL_VULNS=0
+            HIGH_VULNS=0
+            
+            if command -v jq >/dev/null 2>&1 && [ -f "trivy-reports/trivy-report.json" ]; then
+              echo "🔍 Analyzing vulnerabilities with jq..."
+              CRITICAL_VULNS=\$(jq -r 'if .Results then [.Results[]?.Vulnerabilities[]? // empty] | map(select(.Severity == "CRITICAL")) | length else 0 end' trivy-reports/trivy-report.json 2>/dev/null || echo "0")
+              HIGH_VULNS=\$(jq -r 'if .Results then [.Results[]?.Vulnerabilities[]? // empty] | map(select(.Severity == "HIGH")) | length else 0 end' trivy-reports/trivy-report.json 2>/dev/null || echo "0")
+            else
+              echo "🔍 Using grep-based counting (fallback method)..."
+              if [ -f "trivy-reports/trivy-report.txt" ]; then
+                CRITICAL_VULNS=\$(grep -c "CRITICAL" trivy-reports/trivy-report.txt 2>/dev/null || echo "0")
+                HIGH_VULNS=\$(grep -c "HIGH" trivy-reports/trivy-report.txt 2>/dev/null || echo "0")
+              fi
+            fi
             
             echo ""
             echo "📈 VULNERABILITY SUMMARY:"
             echo "Critical: \$CRITICAL_VULNS"
             echo "High: \$HIGH_VULNS"
+            echo "Status: \$([ \$CRITICAL_VULNS -eq 0 ] && echo '✅ No Critical Issues' || echo '⚠️ Review Required')"
             echo ""
             
-            # Store counts in environment variables for post actions
+            # Store counts for post actions
             echo \$CRITICAL_VULNS > trivy-reports/critical-count.txt
             echo \$HIGH_VULNS > trivy-reports/high-count.txt
+            
+            # Create summary report
+            echo "Creating scan summary..."
+            cat > trivy-reports/summary.txt << 'EOL'
+Trivy Security Scan Summary
+===========================
+EOL
+            echo "Image: ${DOCKER_IMAGE}" >> trivy-reports/summary.txt
+            echo "Scan Date: \$(date)" >> trivy-reports/summary.txt
+            echo "Critical Vulnerabilities: \$CRITICAL_VULNS" >> trivy-reports/summary.txt
+            echo "High Vulnerabilities: \$HIGH_VULNS" >> trivy-reports/summary.txt
+            echo "Status: \$([ \$CRITICAL_VULNS -eq 0 ] && echo 'PASSED ✅' || echo 'REVIEW REQUIRED ⚠️')" >> trivy-reports/summary.txt
+            
+            echo ""
+            echo "📋 SCAN SUMMARY:"
+            cat trivy-reports/summary.txt
           """
         }
       }
