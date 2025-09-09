@@ -184,11 +184,12 @@ pipeline {
 def safeSlackSend(String color, String message) {
   if (env.ENABLE_SLACK == 'true') {
     try {
-      // Since test connection works, use global Jenkins configuration
+      // Since test connection works, use global Jenkins configuration WITHOUT credentials
       slackSend(
         channel: env.SLACK_CHANNEL,
         color: color,
-        message: message
+        message: message,
+        tokenCredentialId: '' // Explicitly use empty credentials to force global config
       )
       echo "✅ Slack notification sent successfully to ${env.SLACK_CHANNEL}"
     } catch (Exception e1) {
@@ -198,7 +199,8 @@ def safeSlackSend(String color, String message) {
           channel: env.SLACK_CHANNEL,
           color: color,
           message: message,
-          teamDomain: 'work'
+          teamDomain: 'work',
+          tokenCredentialId: '' // Explicitly use empty credentials
         )
         echo "✅ Slack notification sent successfully with teamDomain"
       } catch (Exception e2) {
@@ -206,7 +208,8 @@ def safeSlackSend(String color, String message) {
         try {
           slackSend(
             channel: env.SLACK_CHANNEL,
-            message: message
+            message: message,
+            tokenCredentialId: '' // Explicitly use empty credentials
           )
           echo "✅ Slack notification sent successfully (basic method)"
         } catch (Exception e3) {
