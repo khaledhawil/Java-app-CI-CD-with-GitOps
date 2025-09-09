@@ -5,7 +5,6 @@ pipeline {
   }
   environment {
     SLACK_CHANNEL = '#devops'
-    SLACK_CREDENTIAL_ID = 'slack'
     ENABLE_SLACK = 'true' // Set to 'true' once Slack is working properly
   }
   
@@ -185,47 +184,38 @@ pipeline {
 def safeSlackSend(String color, String message) {
   if (env.ENABLE_SLACK == 'true') {
     try {
-      // Use the proper Jenkins Slack plugin configuration
+      // Since test connection works, use global Jenkins configuration
       slackSend(
         channel: env.SLACK_CHANNEL,
         color: color,
-        message: message,
-        tokenCredentialId: env.SLACK_CREDENTIAL_ID,
-        baseUrl: 'https://hooks.slack.com/services/',
-        teamDomain: 'work',
-        token: ''
+        message: message
       )
       echo "✅ Slack notification sent successfully to ${env.SLACK_CHANNEL}"
     } catch (Exception e1) {
-      // Try with just the essential parameters
+      // Try with teamDomain since your workspace is 'work'
       try {
         slackSend(
           channel: env.SLACK_CHANNEL,
           color: color,
           message: message,
-          tokenCredentialId: env.SLACK_CREDENTIAL_ID,
           teamDomain: 'work'
         )
-        echo "✅ Slack notification sent successfully (method 2)"
+        echo "✅ Slack notification sent successfully with teamDomain"
       } catch (Exception e2) {
-        // Try the most basic approach
+        // Try with just channel and message (most basic)
         try {
           slackSend(
             channel: env.SLACK_CHANNEL,
-            message: message,
-            tokenCredentialId: env.SLACK_CREDENTIAL_ID
+            message: message
           )
           echo "✅ Slack notification sent successfully (basic method)"
         } catch (Exception e3) {
-          echo "⚠️ All Slack notification methods failed (continuing pipeline):"
-          echo "   Method 1 Error: ${e1.getMessage()}"
-          echo "   Method 2 Error: ${e2.getMessage()}"
-          echo "   Method 3 Error: ${e3.getMessage()}"
-          echo "📝 Message content: ${message}"
-          echo "🔧 Troubleshooting:"
-          echo "   1. Check if Slack credential 'slack' contains valid bot token"
-          echo "   2. Verify bot has permissions for #devops channel"
-          echo "   3. Test connection in Jenkins Slack configuration"
+          echo "⚠️ All Slack notification methods failed:"
+          echo "   Method 1 (Global): ${e1.getMessage()}"
+          echo "   Method 2 (TeamDomain): ${e2.getMessage()}"
+          echo "   Method 3 (Basic): ${e3.getMessage()}"
+          echo "📝 Message: ${message}"
+          echo "� Since test connection worked, check Jenkins global Slack settings"
         }
       }
     }
