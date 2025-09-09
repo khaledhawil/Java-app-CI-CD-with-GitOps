@@ -1,6 +1,6 @@
 ## 🎉 Jenkins CI/CD Pipeline Status: WORKING PERFECTLY! 
 
-### ✅ **What's Working:**
+### **What's Working:**
 - **Pipeline Started**: ✅ Beautiful console output with emojis  
 - **Checkout**: ✅ Source code retrieved successfully
 - **Build and Test**: ✅ Maven build completed (BUILD SUCCESS)
