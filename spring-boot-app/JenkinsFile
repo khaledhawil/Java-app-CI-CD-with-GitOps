@@ -59,18 +59,148 @@ pipeline {
     stage('Static Code Analysis') {
       steps {
         withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-          sh 'cd spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+          script {
+            sh 'cd spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+            
+            // Wait for SonarQube to process results
+            sleep(time: 10, unit: 'SECONDS')
+            
+            // Create reports directory and fetch SonarQube metrics
+            sh '''
+              mkdir -p sonar-reports
+              echo "🔍 Fetching SonarQube analysis results..."
+              
+              PROJECT_KEY="com.abhishek:spring-boot-demo"
+              
+              # Get quality gate status
+              curl -s -u ${SONAR_AUTH_TOKEN}: "${SONAR_URL}/api/qualitygates/project_status?projectKey=${PROJECT_KEY}" > sonar-reports/quality-gate.json
+              
+              # Get measures (bugs, vulnerabilities, code smells, coverage)
+              curl -s -u ${SONAR_AUTH_TOKEN}: "${SONAR_URL}/api/measures/component?component=${PROJECT_KEY}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,ncloc" > sonar-reports/measures.json
+              
+              # Get issues by severity
+              curl -s -u ${SONAR_AUTH_TOKEN}: "${SONAR_URL}/api/issues/search?componentKeys=${PROJECT_KEY}&facets=severities&ps=1" > sonar-reports/issues.json
+              
+              echo "📊 Processing SonarQube results..."
+              
+              # Parse results and create summary
+              if command -v jq >/dev/null 2>&1; then
+                # Parse quality gate
+                QUALITY_GATE=$(jq -r '.projectStatus.status // "UNKNOWN"' sonar-reports/quality-gate.json 2>/dev/null || echo "UNKNOWN")
+                
+                # Parse measures
+                BUGS=$(jq -r '.component.measures[]? | select(.metric=="bugs") | .value // "0"' sonar-reports/measures.json 2>/dev/null || echo "0")
+                VULNERABILITIES=$(jq -r '.component.measures[]? | select(.metric=="vulnerabilities") | .value // "0"' sonar-reports/measures.json 2>/dev/null || echo "0")
+                CODE_SMELLS=$(jq -r '.component.measures[]? | select(.metric=="code_smells") | .value // "0"' sonar-reports/measures.json 2>/dev/null || echo "0")
+                COVERAGE=$(jq -r '.component.measures[]? | select(.metric=="coverage") | .value // "N/A"' sonar-reports/measures.json 2>/dev/null || echo "N/A")
+                
+                # Parse severity counts
+                BLOCKER=$(jq -r '.facets[]? | select(.property=="severities") | .values[]? | select(.val=="BLOCKER") | .count // 0' sonar-reports/issues.json 2>/dev/null || echo "0")
+                CRITICAL=$(jq -r '.facets[]? | select(.property=="severities") | .values[]? | select(.val=="CRITICAL") | .count // 0' sonar-reports/issues.json 2>/dev/null || echo "0")
+                MAJOR=$(jq -r '.facets[]? | select(.property=="severities") | .values[]? | select(.val=="MAJOR") | .count // 0' sonar-reports/issues.json 2>/dev/null || echo "0")
+              else
+                echo "⚠️ jq not available, using default values"
+                QUALITY_GATE="UNKNOWN"
+                BUGS="0"
+                VULNERABILITIES="0"
+                CODE_SMELLS="0"
+                COVERAGE="N/A"
+                BLOCKER="0"
+                CRITICAL="0"
+                MAJOR="0"
+              fi
+              
+              # Display results
+              echo ""
+              echo "📊 SONARQUBE ANALYSIS RESULTS:"
+              echo "=============================================="
+              echo "🎯 Quality Gate: $QUALITY_GATE"
+              echo "🐛 Bugs: $BUGS"
+              echo "🔒 Security Vulnerabilities: $VULNERABILITIES"
+              echo "🔧 Code Smells: $CODE_SMELLS"
+              echo "📈 Test Coverage: $COVERAGE%"
+              echo ""
+              echo "� Critical Issues:"
+              echo "  🔴 Blocker: $BLOCKER"
+              echo "  🟠 Critical: $CRITICAL"
+              echo "  🟡 Major: $MAJOR"
+              echo "=============================================="
+              
+              # Save results for Slack notification
+              echo "$QUALITY_GATE" > sonar-reports/quality_gate.txt
+              echo "$BUGS" > sonar-reports/bugs.txt
+              echo "$VULNERABILITIES" > sonar-reports/vulnerabilities.txt
+              echo "$CODE_SMELLS" > sonar-reports/code_smells.txt
+              echo "$COVERAGE" > sonar-reports/coverage.txt
+              echo "$BLOCKER" > sonar-reports/blocker.txt
+              echo "$CRITICAL" > sonar-reports/critical.txt
+              echo "$MAJOR" > sonar-reports/major.txt
+            '''
+          }
         }
       }
       post {
+        always {
+          archiveArtifacts artifacts: 'sonar-reports/**', allowEmptyArchive: true
+        }
         success {
           script {
-            sendSlackNotification('good', ":white_check_mark: *SonarQube Analysis Completed* :chart_with_upwards_trend:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Static Code Analysis\n*Status:* SUCCESS :tada:\n*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n*Build URL:* ${BUILD_URL}")
+            // Read SonarQube results
+            def qualityGate = readFile('sonar-reports/quality_gate.txt').trim()
+            def bugs = readFile('sonar-reports/bugs.txt').trim()
+            def vulnerabilities = readFile('sonar-reports/vulnerabilities.txt').trim()
+            def codeSmells = readFile('sonar-reports/code_smells.txt').trim()
+            def coverage = readFile('sonar-reports/coverage.txt').trim()
+            def blocker = readFile('sonar-reports/blocker.txt').trim()
+            def critical = readFile('sonar-reports/critical.txt').trim()
+            def major = readFile('sonar-reports/major.txt').trim()
+            
+            // Determine notification status
+            def statusColor = 'good'
+            def statusIcon = ':white_check_mark:'
+            def reviewStatus = 'PASSED'
+            
+            if (qualityGate != 'OK') {
+              statusColor = 'warning'
+              statusIcon = ':warning:'
+              reviewStatus = 'REVIEW REQUIRED'
+            }
+            
+            if (blocker.isInteger() && blocker.toInteger() > 0 || critical.isInteger() && critical.toInteger() > 0) {
+              statusColor = 'danger'
+              statusIcon = ':x:'
+              reviewStatus = 'ACTION REQUIRED'
+            }
+            
+            def sonarMessage = """${statusIcon} *SonarQube Analysis Completed* :chart_with_upwards_trend:
+*Job:* ${JOB_NAME}
+*Build:* #${BUILD_NUMBER}
+*Stage:* Static Code Analysis
+*Status:* ${reviewStatus} ${statusIcon}
+
+*Quality Gate:* ${qualityGate == 'OK' ? ':white_check_mark: PASSED' : ':x: FAILED'}
+
+*📊 Code Quality Summary:*
+:bug: Bugs: ${bugs}
+:lock: Security Vulnerabilities: ${vulnerabilities}
+:wrench: Code Smells: ${codeSmells}
+:chart_with_upwards_trend: Test Coverage: ${coverage}%
+
+*🚨 Critical Issues:*
+:red_circle: Blocker: ${blocker}
+:large_orange_circle: Critical: ${critical}
+:yellow_circle: Major: ${major}
+
+*Review Status:* ${reviewStatus}
+*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo
+*Build Details:* ${BUILD_URL}"""
+
+            sendSlackNotification(statusColor, sonarMessage)
           }
         }
         failure {
           script {
-            sendSlackNotification('danger', ":x: *SonarQube Analysis Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Static Code Analysis\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
+            sendSlackNotification('danger', ":x: *SonarQube Analysis Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Static Code Analysis\n*Status:* FAILED :x:\n*Issue:* SonarQube analysis could not complete\n*Build URL:* ${BUILD_URL}console")
           }
         }
       }
