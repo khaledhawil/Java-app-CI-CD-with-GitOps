@@ -3,7 +3,29 @@ pipeline {
   tools {
     maven 'maven' // Ensure Maven is installed and configured in Jenkins
   }
+  environment {
+    SLACK_CHANNEL = '#devops' // Change this to your preferred channel
+    SLACK_CREDENTIAL_ID = 'slack'
+  }
   stages {
+    stage('Pipeline Started') {
+      steps {
+        script {
+          slackSend(
+            channel: env.SLACK_CHANNEL,
+            color: '#36a64f',
+            message: ":jenkins: *Pipeline Started* :rocket:\n" +
+                     "*Job:* ${JOB_NAME}\n" +
+                     "*Build:* #${BUILD_NUMBER}\n" +
+                     "*Branch:* master\n" +
+                     "*Started by:* ${BUILD_USER_ID ?: 'Jenkins'}\n" +
+                     "*Build URL:* ${BUILD_URL}",
+            teamDomain: '',
+            token: ''
+          )
+        }
+      }
+    }
     stage('Checkout') {
       steps {
         sh 'echo passed'
@@ -16,6 +38,41 @@ pipeline {
         // build the project and create a JAR file
         sh 'cd spring-boot-app && mvn clean package'
       }
+      post {
+        success {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'good',
+              message: ":white_check_mark: *Build and Test Completed* :hammer_and_wrench:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Test\n" +
+                       "*Status:* SUCCESS :tada:\n" +
+                       "*Artifact:* spring-boot-web.jar created\n" +
+                       "*Build URL:* ${BUILD_URL}",
+              teamDomain: '',
+              token: ''
+            )
+          }
+        }
+        failure {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'danger',
+              message: ":x: *Build and Test Failed* :warning:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Test\n" +
+                       "*Status:* FAILED :x:\n" +
+                       "*Build URL:* ${BUILD_URL}console",
+              teamDomain: '',
+              token: ''
+            )
+          }
+        }
+      }
     }
     stage('Static Code Analysis') {
       environment {
@@ -24,6 +81,41 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
           sh 'cd spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+        }
+      }
+      post {
+        success {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'good',
+              message: ":white_check_mark: *SonarQube Analysis Completed* :chart_with_upwards_trend:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Static Code Analysis\n" +
+                       "*Status:* SUCCESS :tada:\n" +
+                       "*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n" +
+                       "*Build URL:* ${BUILD_URL}",
+              teamDomain: '',
+              token: ''
+            )
+          }
+        }
+        failure {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'danger',
+              message: ":x: *SonarQube Analysis Failed* :warning:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Static Code Analysis\n" +
+                       "*Status:* FAILED :x:\n" +
+                       "*Build URL:* ${BUILD_URL}console",
+              teamDomain: '',
+              token: ''
+            )
+          }
         }
       }
     }
@@ -38,6 +130,42 @@ pipeline {
             sh 'cd spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
             sh 'echo $REGISTRY_CREDENTIALS_PSW | docker login -u $REGISTRY_CREDENTIALS_USR --password-stdin'
             sh 'docker push ${DOCKER_IMAGE}'
+        }
+      }
+      post {
+        success {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'good',
+              message: ":docker: *Docker Image Built & Pushed Successfully* :ship:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Push Docker Image\n" +
+                       "*Status:* SUCCESS :white_check_mark:\n" +
+                       "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
+                       "*Registry:* Docker Hub\n" +
+                       "*Build URL:* ${BUILD_URL}",
+              teamDomain: '',
+              token: ''
+            )
+          }
+        }
+        failure {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'danger',
+              message: ":x: *Docker Build/Push Failed* :warning:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Push Docker Image\n" +
+                       "*Status:* FAILED :x:\n" +
+                       "*Build URL:* ${BUILD_URL}console",
+              teamDomain: '',
+              token: ''
+            )
+          }
         }
       }
     }
@@ -59,6 +187,84 @@ pipeline {
                 '''
             }
         }
+    }
+  }
+  post {
+    success {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'good',
+          message: ":jenkins: *Pipeline Completed Successfully* :tada:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* SUCCESS :white_check_mark:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
+                   "*Deployment:* Updated to version ${BUILD_NUMBER}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console",
+          teamDomain: '',
+          token: ''
+        )
+      }
+    }
+    failure {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'danger',
+          message: ":jenkins: *Pipeline Failed* :x:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* FAILED :red_circle:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Failed Stage:* ${env.STAGE_NAME ?: 'Unknown'}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console\n" +
+                   "*Please check the logs for more details* :point_up:",
+          teamDomain: '',
+          token: ''
+        )
+      }
+    }
+    unstable {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'warning',
+          message: ":jenkins: *Pipeline Unstable* :warning:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* UNSTABLE :yellow_circle:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console",
+          teamDomain: '',
+          token: ''
+        )
+      }
+    }
+    aborted {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'warning',
+          message: ":jenkins: *Pipeline Aborted* :stop_sign:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* ABORTED :octagonal_sign:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console",
+          teamDomain: '',
+          token: ''
+        )
+      }
     }
   }
 }
