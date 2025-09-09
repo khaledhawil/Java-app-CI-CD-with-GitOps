@@ -185,37 +185,51 @@ pipeline {
 def safeSlackSend(String color, String message) {
   if (env.ENABLE_SLACK == 'true') {
     try {
-      // Try with minimal configuration first
+      // Use the proper Jenkins Slack plugin configuration
       slackSend(
         channel: env.SLACK_CHANNEL,
         color: color,
         message: message,
-        tokenCredentialId: env.SLACK_CREDENTIAL_ID
+        tokenCredentialId: env.SLACK_CREDENTIAL_ID,
+        baseUrl: 'https://hooks.slack.com/services/',
+        teamDomain: 'work',
+        token: ''
       )
       echo "✅ Slack notification sent successfully to ${env.SLACK_CHANNEL}"
-    } catch (Exception e) {
-      // Try alternative approach with teamDomain
+    } catch (Exception e1) {
+      // Try with just the essential parameters
       try {
         slackSend(
           channel: env.SLACK_CHANNEL,
           color: color,
           message: message,
           tokenCredentialId: env.SLACK_CREDENTIAL_ID,
-          teamDomain: 'work-aez5158'
+          teamDomain: 'work'
         )
-        echo "✅ Slack notification sent successfully with teamDomain"
+        echo "✅ Slack notification sent successfully (method 2)"
       } catch (Exception e2) {
-        echo "⚠️ Slack notification failed (continuing pipeline):"
-        echo "   Error 1: ${e.getMessage()}"
-        echo "   Error 2: ${e2.getMessage()}"
-        echo "📝 Would have sent: ${message}"
-        echo "🔧 Please check:"
-        echo "   1. Slack credential 'slack' exists and is valid"
-        echo "   2. Bot token has permission to post to #devops channel"
-        echo "   3. Jenkins Slack plugin is properly configured"
+        // Try the most basic approach
+        try {
+          slackSend(
+            channel: env.SLACK_CHANNEL,
+            message: message,
+            tokenCredentialId: env.SLACK_CREDENTIAL_ID
+          )
+          echo "✅ Slack notification sent successfully (basic method)"
+        } catch (Exception e3) {
+          echo "⚠️ All Slack notification methods failed (continuing pipeline):"
+          echo "   Method 1 Error: ${e1.getMessage()}"
+          echo "   Method 2 Error: ${e2.getMessage()}"
+          echo "   Method 3 Error: ${e3.getMessage()}"
+          echo "📝 Message content: ${message}"
+          echo "🔧 Troubleshooting:"
+          echo "   1. Check if Slack credential 'slack' contains valid bot token"
+          echo "   2. Verify bot has permissions for #devops channel"
+          echo "   3. Test connection in Jenkins Slack configuration"
+        }
       }
     }
   } else {
-    echo "📝 Slack disabled. Message: ${message}"
+    echo "📝 Slack notifications disabled. Message: ${message}"
   }
 }
