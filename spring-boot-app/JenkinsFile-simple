@@ -1,0 +1,98 @@
+pipeline {
+  agent any
+  tools {
+    maven 'maven'
+  }
+  environment {
+    SLACK_CHANNEL = '#devops'
+    SLACK_CREDENTIAL_ID = 'slack'
+  }
+  stages {
+    stage('Pipeline Started') {
+      steps {
+        script {
+          // Simple echo instead of Slack for now to test
+          echo "🚀 Pipeline Started - Job: ${JOB_NAME} - Build: #${BUILD_NUMBER}"
+        }
+      }
+    }
+    stage('Checkout') {
+      steps {
+        sh 'echo passed'
+      }
+    }
+    stage('Build and Test') {
+      steps {
+        sh 'ls -ltr'
+        sh 'cd spring-boot-app && mvn clean package'
+      }
+    }
+    stage('Static Code Analysis') {
+      environment {
+        SONAR_URL = "http://sonarqube:9000"
+      }
+      steps {
+        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+          sh 'cd spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+        }
+      }
+    }
+    stage('Build and Push Docker Image') {
+      environment {
+        DOCKER_IMAGE = "khaledhawil/java-cicd:${BUILD_NUMBER}"
+        REGISTRY_CREDENTIALS = credentials('docker-hub')
+      }
+      steps {
+        script {
+            sh 'cd spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+            sh 'echo $REGISTRY_CREDENTIALS_PSW | docker login -u $REGISTRY_CREDENTIALS_USR --password-stdin'
+            sh 'docker push ${DOCKER_IMAGE}'
+        }
+      }
+    }
+    stage('Update Deployment File') {
+        environment {
+            GIT_REPO_NAME = "Java-app-CI-CD-with-GitOps"
+            GIT_USER_NAME = "khaledhawil"
+        }
+        steps {
+            withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GITHUB_USERNAME')]) {
+                sh '''
+                    git config user.email "khaledJenkins@gmail.com"
+                    git config user.name "Jenkins-user"
+                    
+                    # Checkout master branch to avoid detached HEAD
+                    git checkout master
+                    
+                    # Update deployment file
+                    BUILD_NUMBER=${BUILD_NUMBER}
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" spring-boot-app-manifests/deployment.yml
+                    
+                    # Check if there are changes to commit
+                    if git diff --quiet spring-boot-app-manifests/deployment.yml; then
+                        echo "No changes to commit"
+                    else
+                        git add spring-boot-app-manifests/deployment.yml
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
+                    fi
+                '''
+            }
+        }
+    }
+  }
+  post {
+    success {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        echo "✅ Pipeline Completed Successfully - Duration: ${duration} - Docker Image: khaledhawil/java-cicd:${BUILD_NUMBER}"
+      }
+    }
+    failure {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        echo "❌ Pipeline Failed - Duration: ${duration}"
+      }
+    }
+  }
+}
