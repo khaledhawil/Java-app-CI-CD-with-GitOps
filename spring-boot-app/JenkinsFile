@@ -112,7 +112,7 @@ pipeline {
             
             # Create reports directory
             mkdir -p trivy-reports
-            
+
             # Run Trivy scan with increased timeout
             echo "🔍 Running detailed security scan (this may take a few minutes)..."
             trivy image --timeout 15m --scanners vuln --format json --output trivy-reports/trivy-report.json ${DOCKER_IMAGE} || echo "⚠️ JSON scan encountered issues but continuing..."
@@ -195,12 +195,43 @@ EOL
             def criticalCount = readFile('trivy-reports/critical-count.txt').trim()
             def highCount = readFile('trivy-reports/high-count.txt').trim()
             
-            sendSlackNotification('good', ":shield: *Security Scan Completed* :mag_right:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Trivy Security Scan\n*Status:* SUCCESS :white_check_mark:\n*Image:* ${DOCKER_IMAGE}\n*Critical Vulnerabilities:* ${criticalCount}\n*High Vulnerabilities:* ${highCount}\n*Build URL:* ${BUILD_URL}")
+            // Determine security status and appropriate color
+            def securityColor = 'good'
+            def securityStatus = ':white_check_mark: SECURE'
+            def securityIcon = ':shield:'
+            def actionRequired = ''
+            
+            if (criticalCount.toInteger() > 0) {
+              securityColor = 'danger'
+              securityStatus = ':rotating_light: CRITICAL VULNERABILITIES FOUND'
+              securityIcon = ':warning:'
+              actionRequired = '\n:exclamation: *IMMEDIATE ACTION REQUIRED*\n:point_right: Review critical vulnerabilities before production deployment'
+            } else if (highCount.toInteger() > 0) {
+              securityColor = 'warning'
+              securityStatus = ':yellow_circle: HIGH VULNERABILITIES DETECTED'
+              securityIcon = ':mag:'
+              actionRequired = '\n:warning: *REVIEW RECOMMENDED*\n:point_right: Consider updating dependencies to fix high-severity issues'
+            }
+            
+            def vulnerabilitySummary = ''
+            if (criticalCount.toInteger() > 0 || highCount.toInteger() > 0) {
+              vulnerabilitySummary = "\n\n:bar_chart: *Vulnerability Breakdown:*"
+              if (criticalCount.toInteger() > 0) {
+                vulnerabilitySummary += "\n:red_circle: Critical: ${criticalCount}"
+              }
+              if (highCount.toInteger() > 0) {
+                vulnerabilitySummary += "\n:orange_circle: High: ${highCount}"
+              }
+              vulnerabilitySummary += "\n:blue_circle: Medium & Low: Additional issues detected"
+              vulnerabilitySummary += "\n\n:clipboard: *Full Report:* ${BUILD_URL}artifact/trivy-reports/"
+            }
+            
+            sendSlackNotification(securityColor, "${securityIcon} *Trivy Security Scan Complete* ${securityIcon}\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Image:* ${DOCKER_IMAGE}\n*Status:* ${securityStatus}${vulnerabilitySummary}${actionRequired}\n\n:link: *Build Details:* ${BUILD_URL}")
           }
         }
         failure {
           script {
-            sendSlackNotification('danger', ":x: *Security Scan Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Trivy Security Scan\n*Status:* FAILED :x:\n*Image:* ${DOCKER_IMAGE}\n*Build URL:* ${BUILD_URL}console")
+            sendSlackNotification('danger', ":x: *Trivy Security Scan Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Image:* ${DOCKER_IMAGE}\n*Status:* SCAN FAILED :red_circle:\n*Issue:* Security scanning could not complete\n:point_right: Check Jenkins logs for scan errors\n\n:link: *Console:* ${BUILD_URL}console")
           }
         }
       }
