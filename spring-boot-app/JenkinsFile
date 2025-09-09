@@ -10,6 +10,9 @@ pipeline {
     GIT_REPO_NAME = "Java-app-CI-CD-with-GitOps"
     GIT_USER_NAME = "khaledhawil"
     SONAR_URL = "http://sonarqube:9000"
+    // Trivy configuration
+    TRIVY_NO_PROGRESS = "true"
+    TRIVY_CACHE_DIR = "/tmp/trivy-cache"
   }
   
   stages {
@@ -73,26 +76,128 @@ pipeline {
       }
     }
     
-    stage('Build and Push Docker Image') {
-      environment {
-        REGISTRY_CREDENTIALS = credentials('docker-hub')
-      }
+    stage('Build Docker Image') {
       steps {
         script {
           sh 'cd spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
-          sh 'echo $REGISTRY_CREDENTIALS_PSW | docker login -u $REGISTRY_CREDENTIALS_USR --password-stdin'
-          sh 'docker push ${DOCKER_IMAGE}'
+          echo "✅ Docker image built successfully: ${DOCKER_IMAGE}"
         }
       }
       post {
         success {
           script {
-            sendSlackNotification('good', ":docker: *Docker Image Built & Pushed Successfully* :ship:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Push Docker Image\n*Status:* SUCCESS :white_check_mark:\n*Docker Image:* ${DOCKER_IMAGE}\n*Registry:* Docker Hub\n*Build URL:* ${BUILD_URL}")
+            sendSlackNotification('good', ":docker: *Docker Image Built Successfully* :hammer_and_wrench:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build Docker Image\n*Status:* SUCCESS :white_check_mark:\n*Docker Image:* ${DOCKER_IMAGE}\n*Build URL:* ${BUILD_URL}")
           }
         }
         failure {
           script {
-            sendSlackNotification('danger', ":x: *Docker Build/Push Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Push Docker Image\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
+            sendSlackNotification('danger', ":x: *Docker Image Build Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build Docker Image\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
+          }
+        }
+      }
+    }
+    
+    stage('Security Scan with Trivy') {
+      steps {
+        script {
+          // Install Trivy if not already installed
+          sh '''
+            # Check if Trivy is installed, if not install it
+            if ! command -v trivy &> /dev/null; then
+              echo "📦 Installing Trivy..."
+              # Install Trivy for Ubuntu/Debian
+              sudo apt-get update
+              sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+              wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+              echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+              sudo apt-get update
+              sudo apt-get install -y trivy
+            else
+              echo "✅ Trivy is already installed"
+            fi
+          '''
+          
+          // Update Trivy database
+          sh 'trivy --version && trivy image --download-db-only'
+          
+          // Scan the Docker image
+          sh """
+            echo "🔍 =============================================="
+            echo "🔍 Starting Trivy Security Scan"
+            echo "🔍 Image: ${DOCKER_IMAGE}"
+            echo "🔍 =============================================="
+            
+            # Create reports directory
+            mkdir -p trivy-reports
+            
+            # Run Trivy scan with multiple output formats
+            trivy image --format table --output trivy-reports/trivy-report.txt ${DOCKER_IMAGE} || true
+            trivy image --format json --output trivy-reports/trivy-report.json ${DOCKER_IMAGE} || true
+            
+            # Display scan results
+            echo ""
+            echo "📊 TRIVY SECURITY SCAN RESULTS:"
+            echo "=============================================="
+            cat trivy-reports/trivy-report.txt || echo "⚠️ Could not display report"
+            echo "=============================================="
+            
+            # Check for HIGH and CRITICAL vulnerabilities
+            HIGH_VULNS=\$(trivy image --format json ${DOCKER_IMAGE} | jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL") | .VulnerabilityID' | wc -l)
+            CRITICAL_VULNS=\$(trivy image --format json ${DOCKER_IMAGE} | jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL") | .VulnerabilityID' | wc -l)
+            
+            echo ""
+            echo "📈 VULNERABILITY SUMMARY:"
+            echo "Critical: \$CRITICAL_VULNS"
+            echo "High: \$HIGH_VULNS"
+            echo ""
+            
+            # Store counts in environment variables for post actions
+            echo \$CRITICAL_VULNS > trivy-reports/critical-count.txt
+            echo \$HIGH_VULNS > trivy-reports/high-count.txt
+          """
+        }
+      }
+      post {
+        always {
+          // Archive the Trivy reports
+          archiveArtifacts artifacts: 'trivy-reports/*', allowEmptyArchive: true
+        }
+        success {
+          script {
+            def criticalCount = readFile('trivy-reports/critical-count.txt').trim()
+            def highCount = readFile('trivy-reports/high-count.txt').trim()
+            
+            sendSlackNotification('good', ":shield: *Security Scan Completed* :mag_right:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Trivy Security Scan\n*Status:* SUCCESS :white_check_mark:\n*Image:* ${DOCKER_IMAGE}\n*Critical Vulnerabilities:* ${criticalCount}\n*High Vulnerabilities:* ${highCount}\n*Build URL:* ${BUILD_URL}")
+          }
+        }
+        failure {
+          script {
+            sendSlackNotification('danger', ":x: *Security Scan Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Trivy Security Scan\n*Status:* FAILED :x:\n*Image:* ${DOCKER_IMAGE}\n*Build URL:* ${BUILD_URL}console")
+          }
+        }
+      }
+    }
+    
+    stage('Push Docker Image') {
+      environment {
+        REGISTRY_CREDENTIALS = credentials('docker-hub')
+      }
+      steps {
+        script {
+          sh 'echo $REGISTRY_CREDENTIALS_PSW | docker login -u $REGISTRY_CREDENTIALS_USR --password-stdin'
+          sh 'docker push ${DOCKER_IMAGE}'
+          echo "✅ Docker image pushed successfully to Docker Hub"
+        }
+      }
+      post {
+        success {
+          script {
+            sendSlackNotification('good', ":rocket: *Docker Image Pushed Successfully* :ship:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Push Docker Image\n*Status:* SUCCESS :white_check_mark:\n*Docker Image:* ${DOCKER_IMAGE}\n*Registry:* Docker Hub\n*Build URL:* ${BUILD_URL}")
+          }
+        }
+        failure {
+          script {
+            sendSlackNotification('danger', ":x: *Docker Push Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Push Docker Image\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
           }
         }
       }
