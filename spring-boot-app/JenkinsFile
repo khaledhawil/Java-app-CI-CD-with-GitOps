@@ -4,37 +4,29 @@ pipeline {
     maven 'maven' // Ensure Maven is installed and configured in Jenkins
   }
   environment {
-    SLACK_CHANNEL = '#devops' // Change this to your preferred channel
+    SLACK_CHANNEL = '#devops'
     SLACK_CREDENTIAL_ID = 'slack'
+    ENABLE_SLACK = 'true' // Set to 'false' to disable Slack notifications
   }
+  
   stages {
     stage('Pipeline Started') {
       steps {
         script {
-          try {
-            slackSend(
-              channel: env.SLACK_CHANNEL,
-              color: '#36a64f',
-              message: ":jenkins: *Pipeline Started* :rocket:\n" +
-                       "*Job:* ${JOB_NAME}\n" +
-                       "*Build:* #${BUILD_NUMBER}\n" +
-                       "*Branch:* master\n" +
-                       "*Started by:* admin\n" +
-                       "*Build URL:* ${BUILD_URL}",
-              tokenCredentialId: env.SLACK_CREDENTIAL_ID
-            )
-          } catch (Exception e) {
-            echo "Slack notification failed: ${e.getMessage()}"
-          }
+          echo "🚀 Starting CI/CD Pipeline for ${JOB_NAME} #${BUILD_NUMBER}"
+          // Safe Slack notification
+          safeSlackSend('#36a64f', ":jenkins: *Pipeline Started* :rocket:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Branch:* master\n*Started by:* admin\n*Build URL:* ${BUILD_URL}")
         }
       }
     }
+    
     stage('Checkout') {
       steps {
         sh 'echo passed'
         //git branch: 'main', url: 'https://github.com/khaledhawil/Java-app-CI-CD-with-GitOps.git'
       }
     }
+    
     stage('Build and Test') {
       steps {
         sh 'ls -ltr'
@@ -44,45 +36,17 @@ pipeline {
       post {
         success {
           script {
-            try {
-              slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: 'good',
-                message: ":white_check_mark: *Build and Test Completed* :hammer_and_wrench:\n" +
-                         "*Job:* ${JOB_NAME}\n" +
-                         "*Build:* #${BUILD_NUMBER}\n" +
-                         "*Stage:* Build and Test\n" +
-                         "*Status:* SUCCESS :tada:\n" +
-                         "*Artifact:* spring-boot-web.jar created\n" +
-                         "*Build URL:* ${BUILD_URL}",
-                tokenCredentialId: env.SLACK_CREDENTIAL_ID
-              )
-            } catch (Exception e) {
-              echo "Slack notification failed: ${e.getMessage()}"
-            }
+            safeSlackSend('good', ":white_check_mark: *Build and Test Completed* :hammer_and_wrench:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Test\n*Status:* SUCCESS :tada:\n*Artifact:* spring-boot-web.jar created\n*Build URL:* ${BUILD_URL}")
           }
         }
         failure {
           script {
-            try {
-              slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: 'danger',
-                message: ":x: *Build and Test Failed* :warning:\n" +
-                         "*Job:* ${JOB_NAME}\n" +
-                         "*Build:* #${BUILD_NUMBER}\n" +
-                         "*Stage:* Build and Test\n" +
-                         "*Status:* FAILED :x:\n" +
-                         "*Build URL:* ${BUILD_URL}console",
-                tokenCredentialId: env.SLACK_CREDENTIAL_ID
-              )
-            } catch (Exception e) {
-              echo "Slack notification failed: ${e.getMessage()}"
-            }
+            safeSlackSend('danger', ":x: *Build and Test Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Test\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
           }
         }
       }
     }
+    
     stage('Static Code Analysis') {
       environment {
         SONAR_URL = "http://sonarqube:9000"
@@ -95,41 +59,20 @@ pipeline {
       post {
         success {
           script {
-            slackSend(
-              channel: env.SLACK_CHANNEL,
-              color: 'good',
-              message: ":white_check_mark: *SonarQube Analysis Completed* :chart_with_upwards_trend:\n" +
-                       "*Job:* ${JOB_NAME}\n" +
-                       "*Build:* #${BUILD_NUMBER}\n" +
-                       "*Stage:* Static Code Analysis\n" +
-                       "*Status:* SUCCESS :tada:\n" +
-                       "*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n" +
-                       "*Build URL:* ${BUILD_URL}",
-              tokenCredentialId: env.SLACK_CREDENTIAL_ID
-            )
+            safeSlackSend('good', ":white_check_mark: *SonarQube Analysis Completed* :chart_with_upwards_trend:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Static Code Analysis\n*Status:* SUCCESS :tada:\n*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n*Build URL:* ${BUILD_URL}")
           }
         }
         failure {
           script {
-            slackSend(
-              channel: env.SLACK_CHANNEL,
-              color: 'danger',
-              message: ":x: *SonarQube Analysis Failed* :warning:\n" +
-                       "*Job:* ${JOB_NAME}\n" +
-                       "*Build:* #${BUILD_NUMBER}\n" +
-                       "*Stage:* Static Code Analysis\n" +
-                       "*Status:* FAILED :x:\n" +
-                       "*Build URL:* ${BUILD_URL}console",
-              tokenCredentialId: env.SLACK_CREDENTIAL_ID
-            )
+            safeSlackSend('danger', ":x: *SonarQube Analysis Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Static Code Analysis\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
           }
         }
       }
     }
+    
     stage('Build and Push Docker Image') {
       environment {
         DOCKER_IMAGE = "khaledhawil/java-cicd:${BUILD_NUMBER}"
-        // DOCKERFILE_LOCATION = "spring-boot-app/Dockerfile"
         REGISTRY_CREDENTIALS = credentials('docker-hub')
       }
       steps {
@@ -142,38 +85,17 @@ pipeline {
       post {
         success {
           script {
-            slackSend(
-              channel: env.SLACK_CHANNEL,
-              color: 'good',
-              message: ":docker: *Docker Image Built & Pushed Successfully* :ship:\n" +
-                       "*Job:* ${JOB_NAME}\n" +
-                       "*Build:* #${BUILD_NUMBER}\n" +
-                       "*Stage:* Build and Push Docker Image\n" +
-                       "*Status:* SUCCESS :white_check_mark:\n" +
-                       "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
-                       "*Registry:* Docker Hub\n" +
-                       "*Build URL:* ${BUILD_URL}",
-              tokenCredentialId: env.SLACK_CREDENTIAL_ID
-            )
+            safeSlackSend('good', ":docker: *Docker Image Built & Pushed Successfully* :ship:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Push Docker Image\n*Status:* SUCCESS :white_check_mark:\n*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n*Registry:* Docker Hub\n*Build URL:* ${BUILD_URL}")
           }
         }
         failure {
           script {
-            slackSend(
-              channel: env.SLACK_CHANNEL,
-              color: 'danger',
-              message: ":x: *Docker Build/Push Failed* :warning:\n" +
-                       "*Job:* ${JOB_NAME}\n" +
-                       "*Build:* #${BUILD_NUMBER}\n" +
-                       "*Stage:* Build and Push Docker Image\n" +
-                       "*Status:* FAILED :x:\n" +
-                       "*Build URL:* ${BUILD_URL}console",
-              tokenCredentialId: env.SLACK_CREDENTIAL_ID
-            )
+            safeSlackSend('danger', ":x: *Docker Build/Push Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Build and Push Docker Image\n*Status:* FAILED :x:\n*Build URL:* ${BUILD_URL}console")
           }
         }
       }
     }
+    
     stage('Update Deployment File') {
         environment {
             GIT_REPO_NAME = "Java-app-CI-CD-with-GitOps"
@@ -182,110 +104,72 @@ pipeline {
         steps {
             withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GITHUB_USERNAME')]) {
                 sh '''
-                    # Configure git
                     git config user.email "khaledJenkins@gmail.com"
                     git config user.name "Jenkins-user"
-                    
-                    # Checkout master branch to avoid detached HEAD
                     git checkout master
-                    
-                    # Update deployment file
                     BUILD_NUMBER=${BUILD_NUMBER}
                     sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" spring-boot-app-manifests/deployment.yml
                     
                     # Check if there are changes to commit
-                    if git diff --quiet spring-boot-app-manifests/deployment.yml; then
-                        echo "No changes to commit"
-                    else
+                    if ! git diff --quiet spring-boot-app-manifests/deployment.yml; then
                         git add spring-boot-app-manifests/deployment.yml
                         git commit -m "Update deployment image to version ${BUILD_NUMBER}"
                         git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
+                        echo "✅ Deployment file updated and pushed to GitHub"
+                    else
+                        echo "ℹ️ No changes to commit - deployment file already up to date"
                     fi
                 '''
             }
         }
     }
   }
+  
   post {
     success {
       script {
-        try {
-          def duration = currentBuild.durationString.replace(' and counting', '')
-          slackSend(
-            channel: env.SLACK_CHANNEL,
-            color: 'good',
-            message: ":jenkins: *Pipeline Completed Successfully* :tada:\n" +
-                     "*Job:* ${JOB_NAME}\n" +
-                     "*Build:* #${BUILD_NUMBER}\n" +
-                     "*Status:* SUCCESS :white_check_mark:\n" +
-                     "*Duration:* ${duration}\n" +
-                     "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
-                     "*Deployment:* Updated to version ${BUILD_NUMBER}\n" +
-                     "*Build URL:* ${BUILD_URL}\n" +
-                     "*Console:* ${BUILD_URL}console",
-            tokenCredentialId: env.SLACK_CREDENTIAL_ID
-          )
-        } catch (Exception e) {
-          echo "Slack notification failed: ${e.getMessage()}"
-        }
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        safeSlackSend('good', ":jenkins: *Pipeline Completed Successfully* :tada:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* SUCCESS :white_check_mark:\n*Duration:* ${duration}\n*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n*Deployment:* Updated to version ${BUILD_NUMBER}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console")
       }
     }
     failure {
       script {
-        try {
-          def duration = currentBuild.durationString.replace(' and counting', '')
-          slackSend(
-            channel: env.SLACK_CHANNEL,
-            color: 'danger',
-            message: ":jenkins: *Pipeline Failed* :x:\n" +
-                     "*Job:* ${JOB_NAME}\n" +
-                     "*Build:* #${BUILD_NUMBER}\n" +
-                     "*Status:* FAILED :red_circle:\n" +
-                     "*Duration:* ${duration}\n" +
-                     "*Failed Stage:* ${env.STAGE_NAME ?: 'Unknown'}\n" +
-                     "*Build URL:* ${BUILD_URL}\n" +
-                     "*Console:* ${BUILD_URL}console\n" +
-                     "*Please check the logs for more details* :point_up:",
-            tokenCredentialId: env.SLACK_CREDENTIAL_ID
-          )
-        } catch (Exception e) {
-          echo "Slack notification failed: ${e.getMessage()}"
-        }
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        safeSlackSend('danger', ":jenkins: *Pipeline Failed* :x:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* FAILED :red_circle:\n*Duration:* ${duration}\n*Failed Stage:* ${env.STAGE_NAME ?: 'Unknown'}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console\n*Please check the logs for more details* :point_up:")
       }
     }
     unstable {
       script {
         def duration = currentBuild.durationString.replace(' and counting', '')
-        slackSend(
-          channel: env.SLACK_CHANNEL,
-          color: 'warning',
-          message: ":jenkins: *Pipeline Unstable* :warning:\n" +
-                   "*Job:* ${JOB_NAME}\n" +
-                   "*Build:* #${BUILD_NUMBER}\n" +
-                   "*Status:* UNSTABLE :yellow_circle:\n" +
-                   "*Duration:* ${duration}\n" +
-                   "*Build URL:* ${BUILD_URL}\n" +
-                   "*Console:* ${BUILD_URL}console",
-          tokenCredentialId: env.SLACK_CREDENTIAL_ID
-        )
+        safeSlackSend('warning', ":jenkins: *Pipeline Unstable* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* UNSTABLE :yellow_circle:\n*Duration:* ${duration}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console")
       }
     }
     aborted {
       script {
         def duration = currentBuild.durationString.replace(' and counting', '')
-        slackSend(
-          channel: env.SLACK_CHANNEL,
-          color: 'warning',
-          message: ":jenkins: *Pipeline Aborted* :stop_sign:\n" +
-                   "*Job:* ${JOB_NAME}\n" +
-                   "*Build:* #${BUILD_NUMBER}\n" +
-                   "*Status:* ABORTED :octagonal_sign:\n" +
-                   "*Duration:* ${duration}\n" +
-                   "*Build URL:* ${BUILD_URL}\n" +
-                   "*Console:* ${BUILD_URL}console",
-          tokenCredentialId: env.SLACK_CREDENTIAL_ID
-        )
+        safeSlackSend('warning', ":jenkins: *Pipeline Aborted* :stop_sign:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* ABORTED :octagonal_sign:\n*Duration:* ${duration}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console")
       }
     }
+  }
+}
+
+// Helper function to safely send Slack notifications
+def safeSlackSend(String color, String message) {
+  if (env.ENABLE_SLACK == 'true') {
+    try {
+      slackSend(
+        channel: env.SLACK_CHANNEL,
+        color: color,
+        message: message,
+        tokenCredentialId: env.SLACK_CREDENTIAL_ID,
+        iconEmoji: ':jenkins:'
+      )
+      echo "✅ Slack notification sent successfully"
+    } catch (Exception e) {
+      echo "⚠️ Slack notification failed (continuing pipeline): ${e.getMessage()}"
+      echo "📝 Message: ${message}"
+    }
+  } else {
+    echo "📝 Slack disabled. Message: ${message}"
   }
 }

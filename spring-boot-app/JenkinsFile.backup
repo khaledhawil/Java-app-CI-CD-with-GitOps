@@ -1,0 +1,307 @@
+pipeline {
+  agent any
+  tools {
+    maven 'maven' // Ensure Maven is installed and configured in Jenkins
+  }
+  environment {
+    SLACK_CHANNEL = '#devops' // Change this to your preferred channel
+    SLACK_CREDENTIAL_ID = 'slack'
+    SLACK_ENABLED = 'true' // Set to false to disable Slack notifications
+  }
+  
+  // Helper function to send Slack notifications safely
+  def sendSlackNotification(String color, String message) {
+    if (env.SLACK_ENABLED == 'true') {
+      try {
+        // Check if Slack credential exists
+        withCredentials([string(credentialsId: env.SLACK_CREDENTIAL_ID, variable: 'SLACK_TOKEN')]) {
+          slackSend(
+            channel: env.SLACK_CHANNEL,
+            color: color,
+            message: message,
+            tokenCredentialId: env.SLACK_CREDENTIAL_ID,
+            iconEmoji: ':jenkins:'
+          )
+        }
+      } catch (Exception e) {
+        echo "⚠️ Slack notification failed (this won't affect the pipeline): ${e.getMessage()}"
+        echo "📝 Message that would have been sent: ${message}"
+      }
+    } else {
+      echo "📝 Slack notifications disabled. Message: ${message}"
+    }
+  }
+  stages {
+    stage('Pipeline Started') {
+      steps {
+        script {
+          def message = ":jenkins: *Pipeline Started* :rocket:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Branch:* master\n" +
+                       "*Started by:* admin\n" +
+                       "*Build URL:* ${BUILD_URL}"
+          sendSlackNotification('#36a64f', message)
+        }
+      }
+    }
+    stage('Checkout') {
+      steps {
+        sh 'echo passed'
+        //git branch: 'main', url: 'https://github.com/khaledhawil/Java-app-CI-CD-with-GitOps.git'
+      }
+    }
+    stage('Build and Test') {
+      steps {
+        sh 'ls -ltr'
+        // build the project and create a JAR file
+        sh 'cd spring-boot-app && mvn clean package'
+      }
+      post {
+        success {
+          script {
+            try {
+              slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'good',
+                message: ":white_check_mark: *Build and Test Completed* :hammer_and_wrench:\n" +
+                         "*Job:* ${JOB_NAME}\n" +
+                         "*Build:* #${BUILD_NUMBER}\n" +
+                         "*Stage:* Build and Test\n" +
+                         "*Status:* SUCCESS :tada:\n" +
+                         "*Artifact:* spring-boot-web.jar created\n" +
+                         "*Build URL:* ${BUILD_URL}",
+                tokenCredentialId: env.SLACK_CREDENTIAL_ID
+              )
+            } catch (Exception e) {
+              echo "Slack notification failed: ${e.getMessage()}"
+            }
+          }
+        }
+        failure {
+          script {
+            try {
+              slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'danger',
+                message: ":x: *Build and Test Failed* :warning:\n" +
+                         "*Job:* ${JOB_NAME}\n" +
+                         "*Build:* #${BUILD_NUMBER}\n" +
+                         "*Stage:* Build and Test\n" +
+                         "*Status:* FAILED :x:\n" +
+                         "*Build URL:* ${BUILD_URL}console",
+                tokenCredentialId: env.SLACK_CREDENTIAL_ID
+              )
+            } catch (Exception e) {
+              echo "Slack notification failed: ${e.getMessage()}"
+            }
+          }
+        }
+      }
+    }
+    stage('Static Code Analysis') {
+      environment {
+        SONAR_URL = "http://sonarqube:9000"
+      }
+      steps {
+        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+          sh 'cd spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
+        }
+      }
+      post {
+        success {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'good',
+              message: ":white_check_mark: *SonarQube Analysis Completed* :chart_with_upwards_trend:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Static Code Analysis\n" +
+                       "*Status:* SUCCESS :tada:\n" +
+                       "*SonarQube Dashboard:* ${SONAR_URL}/dashboard?id=com.abhishek%3Aspring-boot-demo\n" +
+                       "*Build URL:* ${BUILD_URL}",
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
+            )
+          }
+        }
+        failure {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'danger',
+              message: ":x: *SonarQube Analysis Failed* :warning:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Static Code Analysis\n" +
+                       "*Status:* FAILED :x:\n" +
+                       "*Build URL:* ${BUILD_URL}console",
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
+            )
+          }
+        }
+      }
+    }
+    stage('Build and Push Docker Image') {
+      environment {
+        DOCKER_IMAGE = "khaledhawil/java-cicd:${BUILD_NUMBER}"
+        // DOCKERFILE_LOCATION = "spring-boot-app/Dockerfile"
+        REGISTRY_CREDENTIALS = credentials('docker-hub')
+      }
+      steps {
+        script {
+            sh 'cd spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+            sh 'echo $REGISTRY_CREDENTIALS_PSW | docker login -u $REGISTRY_CREDENTIALS_USR --password-stdin'
+            sh 'docker push ${DOCKER_IMAGE}'
+        }
+      }
+      post {
+        success {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'good',
+              message: ":docker: *Docker Image Built & Pushed Successfully* :ship:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Push Docker Image\n" +
+                       "*Status:* SUCCESS :white_check_mark:\n" +
+                       "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
+                       "*Registry:* Docker Hub\n" +
+                       "*Build URL:* ${BUILD_URL}",
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
+            )
+          }
+        }
+        failure {
+          script {
+            slackSend(
+              channel: env.SLACK_CHANNEL,
+              color: 'danger',
+              message: ":x: *Docker Build/Push Failed* :warning:\n" +
+                       "*Job:* ${JOB_NAME}\n" +
+                       "*Build:* #${BUILD_NUMBER}\n" +
+                       "*Stage:* Build and Push Docker Image\n" +
+                       "*Status:* FAILED :x:\n" +
+                       "*Build URL:* ${BUILD_URL}console",
+              tokenCredentialId: env.SLACK_CREDENTIAL_ID
+            )
+          }
+        }
+      }
+    }
+    stage('Update Deployment File') {
+        environment {
+            GIT_REPO_NAME = "Java-app-CI-CD-with-GitOps"
+            GIT_USER_NAME = "khaledhawil"
+        }
+        steps {
+            withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GITHUB_USERNAME')]) {
+                sh '''
+                    # Configure git
+                    git config user.email "khaledJenkins@gmail.com"
+                    git config user.name "Jenkins-user"
+                    
+                    # Checkout master branch to avoid detached HEAD
+                    git checkout master
+                    
+                    # Update deployment file
+                    BUILD_NUMBER=${BUILD_NUMBER}
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" spring-boot-app-manifests/deployment.yml
+                    
+                    # Check if there are changes to commit
+                    if git diff --quiet spring-boot-app-manifests/deployment.yml; then
+                        echo "No changes to commit"
+                    else
+                        git add spring-boot-app-manifests/deployment.yml
+                        git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
+                    fi
+                '''
+            }
+        }
+    }
+  }
+  post {
+    success {
+      script {
+        try {
+          def duration = currentBuild.durationString.replace(' and counting', '')
+          slackSend(
+            channel: env.SLACK_CHANNEL,
+            color: 'good',
+            message: ":jenkins: *Pipeline Completed Successfully* :tada:\n" +
+                     "*Job:* ${JOB_NAME}\n" +
+                     "*Build:* #${BUILD_NUMBER}\n" +
+                     "*Status:* SUCCESS :white_check_mark:\n" +
+                     "*Duration:* ${duration}\n" +
+                     "*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n" +
+                     "*Deployment:* Updated to version ${BUILD_NUMBER}\n" +
+                     "*Build URL:* ${BUILD_URL}\n" +
+                     "*Console:* ${BUILD_URL}console",
+            tokenCredentialId: env.SLACK_CREDENTIAL_ID
+          )
+        } catch (Exception e) {
+          echo "Slack notification failed: ${e.getMessage()}"
+        }
+      }
+    }
+    failure {
+      script {
+        try {
+          def duration = currentBuild.durationString.replace(' and counting', '')
+          slackSend(
+            channel: env.SLACK_CHANNEL,
+            color: 'danger',
+            message: ":jenkins: *Pipeline Failed* :x:\n" +
+                     "*Job:* ${JOB_NAME}\n" +
+                     "*Build:* #${BUILD_NUMBER}\n" +
+                     "*Status:* FAILED :red_circle:\n" +
+                     "*Duration:* ${duration}\n" +
+                     "*Failed Stage:* ${env.STAGE_NAME ?: 'Unknown'}\n" +
+                     "*Build URL:* ${BUILD_URL}\n" +
+                     "*Console:* ${BUILD_URL}console\n" +
+                     "*Please check the logs for more details* :point_up:",
+            tokenCredentialId: env.SLACK_CREDENTIAL_ID
+          )
+        } catch (Exception e) {
+          echo "Slack notification failed: ${e.getMessage()}"
+        }
+      }
+    }
+    unstable {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'warning',
+          message: ":jenkins: *Pipeline Unstable* :warning:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* UNSTABLE :yellow_circle:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console",
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
+        )
+      }
+    }
+    aborted {
+      script {
+        def duration = currentBuild.durationString.replace(' and counting', '')
+        slackSend(
+          channel: env.SLACK_CHANNEL,
+          color: 'warning',
+          message: ":jenkins: *Pipeline Aborted* :stop_sign:\n" +
+                   "*Job:* ${JOB_NAME}\n" +
+                   "*Build:* #${BUILD_NUMBER}\n" +
+                   "*Status:* ABORTED :octagonal_sign:\n" +
+                   "*Duration:* ${duration}\n" +
+                   "*Build URL:* ${BUILD_URL}\n" +
+                   "*Console:* ${BUILD_URL}console",
+          tokenCredentialId: env.SLACK_CREDENTIAL_ID
+        )
+      }
+    }
+  }
+}
