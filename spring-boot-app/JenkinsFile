@@ -6,7 +6,7 @@ pipeline {
   environment {
     SLACK_CHANNEL = '#devops'
     SLACK_CREDENTIAL_ID = 'slack'
-    ENABLE_SLACK = 'false' // Set to 'true' once Slack is working properly
+    ENABLE_SLACK = 'true' // Set to 'true' once Slack is working properly
   }
   
   stages {
@@ -201,7 +201,7 @@ def safeSlackSend(String color, String message) {
           color: color,
           message: message,
           tokenCredentialId: env.SLACK_CREDENTIAL_ID,
-          teamDomain: 'work'
+          teamDomain: 'work-aez5158'
         )
         echo "✅ Slack notification sent successfully with teamDomain"
       } catch (Exception e2) {
