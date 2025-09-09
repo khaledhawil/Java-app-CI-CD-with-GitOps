@@ -266,21 +266,53 @@ EOL
       steps {
         withCredentials([usernamePassword(credentialsId: 'github', passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GITHUB_USERNAME')]) {
           sh '''
+            echo "🔄 Updating deployment file with new image version..."
             git config user.email "khaledJenkins@gmail.com"
             git config user.name "Jenkins-user"
             git checkout master
-            BUILD_NUMBER=${BUILD_NUMBER}
-            sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" spring-boot-app-manifests/deployment.yml
             
+            echo "📝 Current deployment file content:"
+            cat spring-boot-app-manifests/deployment.yml
+            
+            # Update the image tag
+            BUILD_NUMBER=${BUILD_NUMBER}
+            echo "🏷️ Updating image tag to version: ${BUILD_NUMBER}"
+            
+            # Replace both placeholder and any existing version
+            sed -i "s|image: khaledhawil/java-cicd:.*|image: khaledhawil/java-cicd:${BUILD_NUMBER}|g" spring-boot-app-manifests/deployment.yml
+            
+            echo "📝 Updated deployment file content:"
+            cat spring-boot-app-manifests/deployment.yml
+            
+            # Check if file was actually modified
             if ! git diff --quiet spring-boot-app-manifests/deployment.yml; then
+              echo "✅ Changes detected in deployment file"
               git add spring-boot-app-manifests/deployment.yml
-              git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+              git commit -m "🚀 Update deployment image to version ${BUILD_NUMBER} [CI/CD]"
+              
+              echo "🔄 Pushing changes to GitHub..."
               git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:master
-              echo "✅ Deployment file updated and pushed to GitHub"
+              
+              echo "✅ Deployment file successfully updated and pushed to GitHub"
+              echo "🎯 Image updated to: khaledhawil/java-cicd:${BUILD_NUMBER}"
             else
-              echo "ℹ️ No changes to commit - deployment file already up to date"
+              echo "ℹ️ No changes detected - deployment file may already be up to date"
+              echo "🔍 Current image in deployment file:"
+              grep "image:" spring-boot-app-manifests/deployment.yml
             fi
           '''
+        }
+      }
+      post {
+        success {
+          script {
+            sendSlackNotification('good', ":kubernetes: *Deployment Updated Successfully* :gear:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Update Deployment File\n*Status:* SUCCESS :white_check_mark:\n*New Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n*GitOps:* Deployment manifest updated in repository\n*Build URL:* ${BUILD_URL}")
+          }
+        }
+        failure {
+          script {
+            sendSlackNotification('danger', ":x: *Deployment Update Failed* :warning:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Stage:* Update Deployment File\n*Status:* FAILED :x:\n*Issue:* Could not update Kubernetes deployment manifest\n*Build URL:* ${BUILD_URL}console")
+          }
         }
       }
     }

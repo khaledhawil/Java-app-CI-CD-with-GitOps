@@ -5,20 +5,15 @@ pipeline {
   }
   environment {
     SLACK_CHANNEL = '#devops'
-    ENABLE_SLACK = 'true' // Set to 'true' once Slack is working properly
+    SLACK_CREDENTIAL_ID = 'slack'
+    ENABLE_SLACK = 'true' // Set to 'false' to disable Slack notifications
   }
   
   stages {
     stage('Pipeline Started') {
       steps {
         script {
-          echo "🚀 =============================================="
           echo "🚀 Starting CI/CD Pipeline for ${JOB_NAME} #${BUILD_NUMBER}"
-          echo "🚀 Repository: Java-app-CI-CD-with-GitOps"
-          echo "🚀 Branch: master"
-          echo "🚀 Build URL: ${BUILD_URL}"
-          echo "🚀 =============================================="
-          
           // Safe Slack notification
           safeSlackSend('#36a64f', ":jenkins: *Pipeline Started* :rocket:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Branch:* master\n*Started by:* admin\n*Build URL:* ${BUILD_URL}")
         }
@@ -134,34 +129,12 @@ pipeline {
     success {
       script {
         def duration = currentBuild.durationString.replace(' and counting', '')
-        echo "🎉 =============================================="
-        echo "🎉 PIPELINE COMPLETED SUCCESSFULLY!"
-        echo "🎉 Job: ${JOB_NAME}"
-        echo "🎉 Build: #${BUILD_NUMBER}" 
-        echo "🎉 Duration: ${duration}"
-        echo "🎉 Docker Image: khaledhawil/java-cicd:${BUILD_NUMBER}"
-        echo "🎉 Deployment: Updated to version ${BUILD_NUMBER}"
-        echo "🎉 Build URL: ${BUILD_URL}"
-        echo "🎉 Console: ${BUILD_URL}console"
-        echo "🎉 =============================================="
-        
         safeSlackSend('good', ":jenkins: *Pipeline Completed Successfully* :tada:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* SUCCESS :white_check_mark:\n*Duration:* ${duration}\n*Docker Image:* khaledhawil/java-cicd:${BUILD_NUMBER}\n*Deployment:* Updated to version ${BUILD_NUMBER}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console")
       }
     }
     failure {
       script {
         def duration = currentBuild.durationString.replace(' and counting', '')
-        echo "❌ =============================================="
-        echo "❌ PIPELINE FAILED!"
-        echo "❌ Job: ${JOB_NAME}"
-        echo "❌ Build: #${BUILD_NUMBER}"
-        echo "❌ Duration: ${duration}"
-        echo "❌ Failed Stage: ${env.STAGE_NAME ?: 'Unknown'}"
-        echo "❌ Build URL: ${BUILD_URL}"
-        echo "❌ Console: ${BUILD_URL}console"
-        echo "❌ Please check the logs for more details"
-        echo "❌ =============================================="
-        
         safeSlackSend('danger', ":jenkins: *Pipeline Failed* :x:\n*Job:* ${JOB_NAME}\n*Build:* #${BUILD_NUMBER}\n*Status:* FAILED :red_circle:\n*Duration:* ${duration}\n*Failed Stage:* ${env.STAGE_NAME ?: 'Unknown'}\n*Build URL:* ${BUILD_URL}\n*Console:* ${BUILD_URL}console\n*Please check the logs for more details* :point_up:")
       }
     }
@@ -184,45 +157,19 @@ pipeline {
 def safeSlackSend(String color, String message) {
   if (env.ENABLE_SLACK == 'true') {
     try {
-      // Since test connection works, use global Jenkins configuration WITHOUT credentials
       slackSend(
         channel: env.SLACK_CHANNEL,
         color: color,
         message: message,
-        tokenCredentialId: '' // Explicitly use empty credentials to force global config
+        tokenCredentialId: env.SLACK_CREDENTIAL_ID,
+        iconEmoji: ':jenkins:'
       )
-      echo "✅ Slack notification sent successfully to ${env.SLACK_CHANNEL}"
-    } catch (Exception e1) {
-      // Try with teamDomain since your workspace is 'work'
-      try {
-        slackSend(
-          channel: env.SLACK_CHANNEL,
-          color: color,
-          message: message,
-          teamDomain: 'work',
-          tokenCredentialId: '' // Explicitly use empty credentials
-        )
-        echo "✅ Slack notification sent successfully with teamDomain"
-      } catch (Exception e2) {
-        // Try with just channel and message (most basic)
-        try {
-          slackSend(
-            channel: env.SLACK_CHANNEL,
-            message: message,
-            tokenCredentialId: '' // Explicitly use empty credentials
-          )
-          echo "✅ Slack notification sent successfully (basic method)"
-        } catch (Exception e3) {
-          echo "⚠️ All Slack notification methods failed:"
-          echo "   Method 1 (Global): ${e1.getMessage()}"
-          echo "   Method 2 (TeamDomain): ${e2.getMessage()}"
-          echo "   Method 3 (Basic): ${e3.getMessage()}"
-          echo "📝 Message: ${message}"
-          echo "� Since test connection worked, check Jenkins global Slack settings"
-        }
-      }
+      echo "✅ Slack notification sent successfully"
+    } catch (Exception e) {
+      echo "⚠️ Slack notification failed (continuing pipeline): ${e.getMessage()}"
+      echo "📝 Message: ${message}"
     }
   } else {
-    echo "📝 Slack notifications disabled. Message: ${message}"
+    echo "📝 Slack disabled. Message: ${message}"
   }
 }
